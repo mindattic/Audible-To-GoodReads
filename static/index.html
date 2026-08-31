@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audible &rarr; Goodreads</title>
+<style>
+  :root {
+    --bg: #f7f5f2;
+    --panel: #ffffff;
+    --ink: #1f2320;
+    --muted: #6b7280;
+    --border: #e6e2db;
+    --accent: #d9762b;
+    --accent-ink: #ffffff;
+    --good: #2f7a4f;
+    --bad: #c1443a;
+    --pending: #9a9488;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 32px 16px 80px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  header { margin-bottom: 28px; }
+  header h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  header p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+
+  .step {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    margin-bottom: 14px;
+    position: relative;
+    transition: opacity 0.2s ease;
+  }
+  .step.locked { opacity: 0.5; pointer-events: none; }
+  .step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .step-num {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--pending); color: white;
+    font-size: 0.78rem; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .step.done .step-num { background: var(--good); }
+  .step.done .step-num::after { content: "\2713"; }
+  .step.done .step-num { font-size: 0; }
+  .step.done .step-num::after { font-size: 0.85rem; }
+  .step h2 { font-size: 1.02rem; margin: 0; }
+  .step .desc { color: var(--muted); font-size: 0.88rem; margin: 0 0 14px 34px; line-height: 1.5; }
+
+  .row { margin-left: 34px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  button {
+    font: inherit;
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: none;
+    padding: 9px 16px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.88rem;
+  }
+  button:hover { filter: brightness(1.06); }
+  button:disabled { background: var(--pending); cursor: not-allowed; }
+  button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--border); }
+  a.linklike {
+    color: var(--accent); text-decoration: none; font-size: 0.88rem; font-weight: 600;
+  }
+
+  .status-line {
+    margin-left: 34px; font-size: 0.85rem; color: var(--muted); margin-top: 8px;
+  }
+  .status-line.ok { color: var(--good); }
+  .status-line.err { color: var(--bad); }
+
+  .progress-track {
+    margin: 10px 34px 0; height: 8px; border-radius: 4px;
+    background: var(--border); overflow: hidden; display: none;
+  }
+  .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s; }
+
+  .stats { margin: 12px 34px 0; display: flex; gap: 18px; flex-wrap: wrap; }
+  .stat { font-size: 0.82rem; color: var(--muted); }
+  .stat b { color: var(--ink); font-size: 1rem; display: block; }
+
+  .checkbox-row { margin-left: 34px; font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+
+  .warn-box {
+    margin: 10px 34px 0; padding: 10px 12px; background: #fdf3e3; border: 1px solid #f0d9a8;
+    border-radius: 7px; font-size: 0.82rem; color: #7a5b17;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Audible &rarr; Goodreads</h1>
+    <p>Runs locally on this machine. Your Audible login happens in its own terminal window; your Goodreads import happens on goodreads.com in your browser &mdash; this page never sees either password.</p>
+  </header>
+
+  <section class="step" id="step-connect">
+    <div class="step-head"><div class="step-num">1</div><h2>Connect your Audible account</h2></div>
+    <p class="desc">Opens a separate terminal window running <code>audible quickstart</code>. Log in there (2FA included) &mdash; this page has no access to what you type.</p>
+    <div class="row">
+      <button id="btn-connect">Open Audible Login</button>
+      <button class="secondary" id="btn-recheck-connect">I've logged in &mdash; check again</button>
+    </div>
+    <div class="status-line" id="status-connect">Checking&hellip;</div>
+  </section>
+
+  <section class="step locked" id="step-export">
+    <div class="step-head"><div class="step-num">2</div><h2>Export your Audible library</h2></div>
+    <p class="desc">Pulls your full library (titles, authors, ratings, listening progress) into <code>library.json</code>.</p>
+    <div class="row">
+      <button id="btn-export">Export Library</button>
+    </div>
+    <div class="status-line" id="status-export"></div>
+  </section>
+
+  <section class="step locked" id="step-convert">
+    <div class="step-head"><div class="step-num">3</div><h2>Convert to Goodreads format</h2></div>
+    <p class="desc">Maps each title to a Goodreads import row and looks up ISBNs via Open Library so more titles match on import. About 0.5s per title with lookups on.</p>
+    <div class="checkbox-row">
+      <input type="checkbox" id="chk-isbn" checked>
+      <label for="chk-isbn">Look up ISBNs (recommended &mdash; slower, much better match rate)</label>
+    </div>
+    <div class="row">
+      <button id="btn-convert">Convert</button>
+    </div>
+    <div class="progress-track" id="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+    <div class="status-line" id="status-convert"></div>
+    <div class="stats" id="convert-stats" style="display:none;"></div>
+  </section>
+
+  <section class="step locked" id="step-test">
+    <div class="step-head"><div class="step-num">4</div><h2>Test import (do this first)</h2></div>
+    <p class="desc">Goodreads imports are hard to cleanly undo. Upload a 5-title sample first and check it looks right before importing everything.</p>
+    <div class="warn-box">Upload <b>test_import.csv</b> at Goodreads &rarr; My Books &rarr; Import and export &rarr; Import books, then look at those 5 titles in your library.</div>
+    <div class="row" style="margin-top:12px;">
+      <a class="linklike" href="/download/test" id="link-test-csv">Download test_import.csv</a>
+      <button id="btn-open-goodreads-1">Open Goodreads Import Page &#8599;</button>
+    </div>
+  </section>
+
+  <section class="step locked" id="step-full">
+    <div class="step-head"><div class="step-num">5</div><h2>Full import</h2></div>
+    <p class="desc">Once the test batch looks correct, upload the complete library.</p>
+    <div class="row">
+      <a class="linklike" href="/download/full" id="link-full-csv">Download goodreads_import.csv</a>
+      <button id="btn-open-goodreads-2">Open Goodreads Import Page &#8599;</button>
+    </div>
+  </section>
+</div>
+
+<script>
+const GOODREADS_URL = "https://www.goodreads.com/review/import";
+
+function setStep(id, {locked, done} = {}) {
+  const el = document.getElementById(id);
+  if (locked !== undefined) el.classList.toggle('locked', locked);
+  if (done !== undefined) el.classList.toggle('done', done);
+}
+
+function setStatus(id, text, cls) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'status-line' + (cls ? ' ' + cls : '');
+}
+
+async function fetchStatus() {
+  const res = await fetch('/api/status');
+  return res.json();
+}
+
+async function refreshStatus() {
+  const s = await fetchStatus();
+
+  if (!s.cli_installed) {
+    setStatus('status-connect', 'audible-cli not found. Install it, then reload this page.', 'err');
+    return s;
+  }
+
+  if (s.audible_connected) {
+    setStatus('status-connect', 'Connected.', 'ok');
+    setStep('step-connect', {done: true});
+    setStep('step-export', {locked: false});
+  } else {
+    setStatus('status-connect', 'Not connected yet.', '');
+  }
+
+  if (s.library_exported) {
+    setStatus('status-export', `Exported ${s.library_count ?? '?'} titles to library.json.`, 'ok');
+    setStep('step-export', {done: true});
+    setStep('step-convert', {locked: !s.audible_connected});
+  }
+
+  if (s.csv_ready && s.csv_stats) {
+    renderConvertDone(s.csv_stats);
+    setStep('step-convert', {done: true});
+    setStep('step-test', {locked: false});
+    setStep('step-full', {locked: false});
+  }
+
+  return s;
+}
+
+function renderConvertDone(stats) {
+  setStatus('status-convert', `Wrote ${stats.total} rows.`, 'ok');
+  const box = document.getElementById('convert-stats');
+  box.style.display = 'flex';
+  const shelves = stats.shelves || {};
+  box.innerHTML = `
+    <div class="stat"><b>${stats.total}</b>total</div>
+    <div class="stat"><b>${stats.matched}</b>ISBN matched</div>
+    <div class="stat"><b>${shelves['read'] || 0}</b>read</div>
+    <div class="stat"><b>${shelves['currently-reading'] || 0}</b>currently reading</div>
+    <div class="stat"><b>${shelves['to-read'] || 0}</b>to read</div>
+  `;
+}
+
+document.getElementById('btn-connect').addEventListener('click', async () => {
+  setStatus('status-connect', 'Opening a terminal window for login...', '');
+  const res = await fetch('/api/connect', {method: 'POST'});
+  const data = await res.json();
+  if (!data.ok) {
+    setStatus('status-connect', data.error || 'Could not open terminal.', 'err');
+    return;
+  }
+  setStatus('status-connect', 'Check the new terminal window, log in, then click "check again".', '');
+});
+
+document.getElementById('btn-recheck-connect').addEventListener('click', refreshStatus);
+
+document.getElementById('btn-export').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-export');
+  btn.disabled = true;
+  setStatus('status-export', 'Exporting...', '');
+  const res = await fetch('/api/export', {method: 'POST'});
+  const data = await res.json();
+  btn.disabled = false;
+  if (!data.ok) {
+    setStatus('status-export', data.error || 'Export failed.', 'err');
+    return;
+  }
+  setStatus('status-export', `Exported ${data.count} titles to library.json.`, 'ok');
+  setStep('step-export', {done: true});
+  setStep('step-convert', {locked: false});
+});
+
+document.getElementById('btn-convert').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-convert');
+  const isbnLookup = document.getElementById('chk-isbn').checked;
+  btn.disabled = true;
+  document.getElementById('progress-track').style.display = 'block';
+  document.getElementById('convert-stats').style.display = 'none';
+  setStatus('status-convert', 'Starting...', '');
+
+  const res = await fetch('/api/convert', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({isbn_lookup: isbnLookup}),
+  });
+  const data = await res.json();
+  if (!data.ok) {
+    setStatus('status-convert', data.error || 'Could not start conversion.', 'err');
+    btn.disabled = false;
+    return;
+  }
+
+  const poll = setInterval(async () => {
+    const p = await (await fetch('/api/convert/progress')).json();
+    if (p.total > 0) {
+      const pct = Math.round((p.done / p.total) * 100);
+      document.getElementById('progress-fill').style.width = pct + '%';
+      setStatus('status-convert', `${p.done}/${p.total} — ${p.current_title || ''}`, '');
+    }
+    if (p.status === 'done') {
+      clearInterval(poll);
+      btn.disabled = false;
+      document.getElementById('progress-fill').style.width = '100%';
+      renderConvertDone({total: p.total, matched: p.matched, shelves: p.shelves});
+      setStep('step-convert', {done: true});
+      setStep('step-test', {locked: false});
+      setStep('step-full', {locked: false});
+    } else if (p.status === 'error') {
+      clearInterval(poll);
+      btn.disabled = false;
+      setStatus('status-convert', p.error || 'Conversion failed.', 'err');
+    }
+  }, 700);
+});
+
+function openGoodreads() {
+  window.open(GOODREADS_URL, '_blank');
+}
+document.getElementById('btn-open-goodreads-1').addEventListener('click', openGoodreads);
+document.getElementById('btn-open-goodreads-2').addEventListener('click', openGoodreads);
+
+refreshStatus();
+setInterval(refreshStatus, 4000);
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+library.json
+library.csv
+goodreads_import.csv
+test_import.csv
+failed_imports_review.html
+*.pyc
+__pycache__/
+.venv/
+venv/
