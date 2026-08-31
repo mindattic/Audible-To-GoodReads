@@ -7,3 +7,6 @@ failed_imports_review.html
 __pycache__/
 .venv/
 venv/
+
+# quicksave transcript is a one-shot local handoff file, never committed
+.claude/quicksave.md
